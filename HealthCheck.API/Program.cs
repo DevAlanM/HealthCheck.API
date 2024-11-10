@@ -1,6 +1,7 @@
 using HealthCheck.API.HealthChecks;
 using HealthCheck.API.Models;
 using HealthCheck.API.Persistence;
+using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -10,8 +11,6 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
 builder.Services.AddControllers();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -19,8 +18,15 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<HealthCheckDbContext>()
     .AddSqlServer(connectionString, name: "Check SQL instance")
-    .AddUrlGroup(new Uri("https://github.com/DevAlanM"), name: "GitHub DevAlanM")
-    .AddCheck<CustomHealthCheck>(name: "New Custom Check");
+    .AddUrlGroup(new Uri("https://github.com/DevAlanM"), name: "GitHub DevAlanM");
+    //.AddCheck<CustomHealthCheck>(name: "New Custom Check");
+
+builder.Services.AddHealthChecksUI( options =>
+{
+    options.SetEvaluationTimeInSeconds(seconds: 5);
+    options.MaximumHistoryEntriesPerEndpoint(maxValue: 10);
+    options.AddHealthCheckEndpoint("API with UI HealthChecks", "/health");
+}).AddInMemoryStorage(); 
 
 builder.Services.AddDbContext<HealthCheckDbContext>(options =>
     options.UseSqlServer(connectionString,
@@ -38,7 +44,6 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -54,26 +59,43 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-app.UseHealthChecks("/heath", new HealthCheckOptions
+app.UseHealthChecks("/health", new HealthCheckOptions
 {
-    ResponseWriter = async (context, report) =>
-    {
-        context.Response.ContentType = "application/json";
+    #region Add Better Response
 
-        var response = new HealthCheckReponse
-        {
-            Status = report.Status.ToString(),
-            HealthChecks = report.Entries.Select(x => new IndividualHealthCheckResponse
-            {
-                Component = x.Key,
-                Status = x.Value.Status.ToString(),
-                Description = x.Value.Description
-            }),
-            HealthCheckDuration = report.TotalDuration
-        };
+    //ResponseWriter = async (context, report) =>
+    //{
+    //    context.Response.ContentType = "application/json";
 
-        await context.Response.WriteAsync(JsonConvert.SerializeObject(response));
-    }
+    //    var response = new HealthCheckReponse
+    //    {
+    //        Status = report.Status.ToString(),
+    //        HealthChecks = report.Entries.Select(x => new IndividualHealthCheckResponse
+    //        {
+    //            Component = x.Key,
+    //            Status = x.Value.Status.ToString(),
+    //            Description = x.Value.Description
+    //        }),
+    //        HealthCheckDuration = report.TotalDuration
+    //    };
+
+    //    await context.Response.WriteAsync(JsonConvert.SerializeObject(response));
+    //}
+
+    #endregion
+
+    #region Response UI
+
+    Predicate = p => true,
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+
+    #endregion
+
+});
+
+app.UseHealthChecksUI(options => { 
+    options.UIPath = "/dashboard"; 
+    options.AddCustomStylesheet("style.css");
 });
 
 app.Run();
